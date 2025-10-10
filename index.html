@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق التعرف على الأشياء والصوت المحسّن (باستخدام Gemini للترجمة والصوت)</title>
+    <!-- تحميل مكتبات TensorFlow.js و COCO-SSD -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        /* إضافة خطوط عربية جميلة لتحسين القراءة */
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Cairo', sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f1c4e, #2a417e); /* تدرج لوني أعمق */
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1200px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            font-weight: 700;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .app-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        
+        .video-section, .info-section {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            /* يتم تحديد الارتفاع بواسطة JS ليتناسب مع أبعاد الفيديو الحقيقية (لإزالة التشوه) */
+            padding-bottom: 0; 
+            min-height: 250px; /* ارتفاع افتراضي قبل التحميل */
+            margin-bottom: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        #videoElement, #canvasElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* التأكد من أن الفيديو يملأ الحاوية للحفاظ على النسبة */
+            object-fit: contain; 
+        }
+
+        /* تصحيح الانعكاس: نعكس فقط الـ Canvas للحفاظ على منظور المرآة للرسم */
+        #canvasElement {
+            transform: scaleX(-1);
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        button {
+            flex: 1;
+            min-width: 120px;
+            padding: 12px 20px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #357abd;
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(1px);
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #startBtn {
+            background: #28a745;
+        }
+        
+        #startBtn:hover:not(:disabled) {
+            background: #218838;
+        }
+        
+        #stopBtn {
+            background: #dc3545;
+        }
+        
+        #stopBtn:hover:not(:disabled) {
+            background: #c82333;
+        }
+        
+        #speakBtn {
+            background: #6f42c1;
+        }
+        
+        #speakBtn:hover:not(:disabled) {
+            background: #5a359c;
+        }
+        
+        .results {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            min-height: 150px;
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .result-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border-right: 4px solid #fdbb2d; /* لون مميز */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .result-item strong {
+            font-size: 1.1rem;
+        }
+        
+        .result-item .confidence {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px 8px;
+            border-radius: 5px;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+            font-weight: bold;
+            transition: background 0.3s ease;
+        }
+        
+        .status.ready {
+            background: rgba(40, 167, 69, 0.3);
+        }
+        
+        .status.processing {
+            background: rgba(255, 193, 7, 0.3);
+        }
+        
+        .status.error {
+            background: rgba(220, 53, 69, 0.3);
+        }
+        
+        .status.warning { /* تصميم جديد للتحذير */
+            background: rgba(255, 165, 0, 0.3);
+            color: #fff;
+        }
+        
+        .statistics {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .statistics p {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+            padding-bottom: 5px;
+        }
+        
+        .statistics p:last-child {
+            border-bottom: none;
+        }
+        
+        .instructions {
+            margin-top: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+        
+        .instructions h2 {
+            margin-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        .instructions ol {
+            padding-right: 20px;
+            list-style-type: decimal-leading-zero;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .audio-controls, .settings-row {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .audio-controls label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-basis: 48%; /* لتحسين التوزيع على سطرين في شاشات الجوال */
+            min-width: 150px;
+            justify-content: space-between;
+        }
+        
+        .settings {
+            margin-top: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+        }
+        
+        .settings h3 {
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .settings-item {
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .settings-item label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .settings-item select, .settings-item input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        .settings-item select {
+            appearance: none;
+            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path fill="%234A90E2" d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: left 10px center;
+            padding-left: 30px; /* لترك مساحة للأيقونة */
+        }
+        
+        .empty-results {
+            text-align: center;
+            opacity: 0.7;
+            padding: 20px;
+        }
+        
+        .detection-counter {
+            display: inline-block;
+            background: #fdbb2d;
+            color: #0f1c4e;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            text-align: center;
+            line-height: 28px;
+            font-size: 1rem;
+            margin-right: 5px;
+            font-weight: bold;
+        }
+        
+        .tts-spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #fdbb2d;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .controls, .audio-controls, .settings-row {
+                flex-direction: column;
+            }
+            
+            button, .audio-controls label, .settings-item {
+                width: 100%;
+                min-width: unset;
+            }
+            
+            .audio-controls label {
+                flex-basis: 100%;
+                justify-content: space-between;
+            }
+        }
+        
+        .icon {
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>👁️ تطبيق التعرف على الأشياء والصوت المحسّن</h1>
+            <p class="subtitle">يستخدم هذا التطبيق نموذج Gemini للترجمة الفورية لأسماء الأشياء والكشف عنها صوتيًا باستخدام **خدمة Gemini TTS**.</p>
+        </header>
+        
+        <div class="app-container">
+            <section class="video-section">
+                <h2>الكاميرا المباشرة والكشف</h2>
+                <div class="video-container" id="videoContainer">
+                    <video id="videoElement" autoplay playsinline></video>
+                    <canvas id="canvasElement"></canvas>
+                </div>
+                
+                <div class="controls">
+                    <button id="startBtn">
+                        <span class="icon">▶️</span>
+                        بدء الكشف
+                    </button>
+                    <button id="stopBtn" disabled>
+                        <span class="icon">⏹️</span>
+                        إيقاف الكشف
+                    </button>
+                    <!-- تمت إزالة زر النطق اليدوي لأنه الآن يعتمد على تحميل من API ويجب أن يكون تلقائيا أو يعيد تشغيل آخر مقطع -->
+                    <button id="speakBtn" disabled>
+                        <span class="icon">🔊</span>
+                        تكرار الكشف
+                    </button>
+                </div>
+                
+                <div class="settings">
+                    <h3>إعدادات الصوت والكشف</h3>
+                    <!-- عنصر مشغل الصوت المخفي لـ Gemini TTS -->
+                    <audio id="audioPlayer" style="display: none;"></audio>
+                    <div id="ttsStatus" class="mt-2 text-center text-xs text-white flex justify-center items-center"></div>
+
+                    <div class="audio-controls">
+                        <label>
+                            التحدث تلقائياً
+                            <input type="checkbox" id="autoSpeak" checked>
+                        </label>
+                        <!-- مستوى الصوت يتحكم في مشغل الصوت HTML5 الآن -->
+                        <label>
+                            مستوى الصوت
+                            <input type="range" id="volumeControl" min="0" max="1" step="0.1" value="0.9">
+                        </label>
+                    </div>
+                    
+                    <div class="settings-row">
+                        <div class="settings-item">
+                            <label for="detectionInterval">فترة الكشف (بالثواني)</label>
+                            <select id="detectionInterval">
+                                <option value="1">1 ثانية</option>
+                                <option value="2" selected>2 ثانية</option>
+                                <option value="3">3 ثواني</option>
+                                <option value="4">4 ثواني</option>
+                            </select>
+                        </div>
+                        <div class="settings-item">
+                            <label for="confidenceThreshold">حد الثقة (%)</label>
+                            <select id="confidenceThreshold">
+                                <option value="0.5" selected>50%</option>
+                                <option value="0.6">60%</option>
+                                <option value="0.7">70%</option>
+                                <option value="0.8">80%</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="status processing" id="status">جاري تحميل نموذج الذكاء الاصطناعي...</div>
+            </section>
+            
+            <section class="info-section">
+                <h2>الأشياء المكتشفة (<span id="objectsCount" class="detection-counter">0</span>)</h2>
+                <div class="results" id="results">
+                    <p class="empty-results">لم يتم اكتشاف أي أشياء بعد. يرجى الضغط على "بدء الكشف" بعد انتهاء التهيئة.</p>
+                </div>
+                
+                <div class="statistics">
+                    <h3>إحصائيات الأداء</h3>
+                    <p>إجمالي الكائنات المكتشفة: <span id="totalDetections">0</span></p>
+                    <p>آخر تحديث: <span id="lastUpdate">--</span></p>
+                    <p>معدل الكشف: <span id="detectionRate">--</span></p>
+                </div>
+            </section>
+        </div>
+        
+        <section class="instructions">
+            <h2>كيفية استخدام التطبيق</h2>
+            <ol>
+                <li>اضغط على زر **"بدء الكشف"**. سيقوم التطبيق بطلب الوصول إلى الكاميرا الخلفية (لتوفير دقة أعلى).</li>
+                <li>وجه الكاميرا نحو الأشياء؛ سيقوم التطبيق بتحديدها ورسم مربع حولها.</li>
+                <li>**نظام منع التكرار:** سيتم الإعلان عن الأشياء صوتياً **مرة واحدة** فقط، ولن يتحدث مرة أخرى إلا إذا تغير المشهد أو بعد مرور ثلاث دورات كشف.</li>
+                <li>**الصوت والترجمة بواسطة Gemini:** يتم ترجمة أسماء الكائنات إلى العربية باستخدام نموذج Gemini، ويتم تحويل النص إلى كلام عالي الجودة باستخدام نموذج **Gemini TTS**.</li>
+                <li>استخدم زر **"تكرار الكشف"** لسماع آخر الكائنات المكتشفة مرة أخرى.</li>
+            </ol>
+        </section>
+        
+        <footer>
+            <p>تم تطوير هذا التطبيق باستخدام TensorFlow.js ونموذج COCO-SSD للكشف عن الأشياء وترجمة Gemini وتوليد الصوت باستخدام Gemini TTS.</p>
+            <p>© 2023 تطبيق التعرف على الأشياء للمكفوفين - تم تحسين الصوت وتقليل التكرار.</p>
+        </footer>
+    </div>
+
+    <script>
+        // ======================================================================
+        // متغيرات LLM و TTS
+        // ======================================================================
+        const API_KEY = ""; // سيتم توفيره تلقائيًا في بيئة Canvas
+        // عناوين URL لنماذج Gemini
+        const GEMINI_TRANSLATION_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=" + API_KEY;
+        const TTS_MODEL_NAME = "gemini-2.5-flash-preview-tts";
+        const GEMINI_TTS_URL = `https://generativelanguage.googleapis.com/v1beta/models/${TTS_MODEL_NAME}:generateContent?key=${API_KEY}`;
+        
+        // موجه نظام الترجمة
+        const TRANSLATION_SYSTEM_PROMPT = "You are a professional translator. Translate the given English object class name into a single, concise Arabic word or phrase, suitable for reading aloud. Respond with ONLY the translated Arabic text, without any explanation or punctuation like quotes.";
+        let translationCache = {}; // تخزين مؤقت للترجمات لتجنب الاستدعاءات المتكررة
+
+        // ======================================================================
+        // وظائف مساعدة لـ API و PCM إلى WAV (مطلوبة لـ Gemini TTS)
+        // ======================================================================
+
+        // تحويل Base64 إلى ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // تحويل PCM إلى تنسيق WAV (مطلوب لتشغيل الصوت الخام في المتصفح)
+        function pcmToWav(pcm16, sampleRate) {
+            const numChannels = 1;
+            const bytesPerSample = 2; // 16-bit PCM (Int16Array)
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcm16.length * bytesPerSample;
+
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            let offset = 0;
+
+            function writeString(str) {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset++, str.charCodeAt(i));
+                }
+            }
+            function writeUint32(val) {
+                view.setUint32(offset, val, true); offset += 4;
+            }
+            function writeUint16(val) {
+                view.setUint16(offset, val, true); offset += 2;
+            }
+
+            // RIFF chunk descriptor
+            writeString('RIFF');
+            writeUint32(36 + dataSize);
+            writeString('WAVE');
+
+            // fmt sub-chunk
+            writeString('fmt ');
+            writeUint32(16); // Sub-chunk size
+            writeUint16(1);  // Audio format (1 for PCM)
+            writeUint16(numChannels);
+            writeUint32(sampleRate);
+            writeUint32(byteRate);
+            writeUint16(blockAlign);
+            writeUint16(bytesPerSample * 8); // Bits per sample (16)
+
+            // data sub-chunk
+            writeString('data');
+            writeUint32(dataSize);
+
+            // PCM data
+            const pcm8 = new Uint8Array(buffer, 44);
+            const pcmData = new Uint8Array(pcm16.buffer);
+            pcm8.set(pcmData);
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+        
+        // وظيفة مساعدة لـ API (Exponential Backoff)
+        async function fetchWithExponentialBackoff(url, options, maxRetries = 5) {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    if (response.status === 429 && attempt < maxRetries - 1) {
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    } else {
+                        throw new Error(`API response failed: ${response.status} ${response.statusText}`);
+                    }
+                } catch (error) {
+                    if (attempt === maxRetries - 1) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+        
+        // ======================================================================
+        // وظيفة الترجمة الذكية باستخدام Gemini
+        // ======================================================================
+        async function translateWithGemini(englishText) {
+            const key = englishText.toLowerCase().trim();
+            if (translationCache[key]) {
+                return translationCache[key];
+            }
+
+            const payload = {
+                contents: [{ parts: [{ text: `Translate "${englishText}" to Arabic.` }] }],
+                systemInstruction: {
+                    parts: [{ text: TRANSLATION_SYSTEM_PROMPT }]
+                },
+            };
+
+            try {
+                const result = await fetchWithExponentialBackoff(GEMINI_TRANSLATION_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || englishText;
+                const cleanText = translatedText.replace(/['"“”]/g, '').split('\n')[0].trim();
+
+                translationCache[key] = cleanText;
+                return cleanText;
+
+            } catch (error) {
+                console.error(`Gemini Translation Error for ${englishText}:`, error);
+                return englishText;
+            }
+        }
+        
+        // دالة لترجمة اسم الكائن
+        async function translateObjectName(name) {
+            return await translateWithGemini(name);
+        }
+
+        // ======================================================================
+        // وظيفة توليد الصوت باستخدام Gemini TTS
+        // ======================================================================
+
+        let isSpeaking = false; // لمنع تداخل عمليات النطق
+        
+        async function speakText(text) {
+            if (isSpeaking) {
+                 console.log("TTS busy, skipping current utterance.");
+                 return; 
+            }
+            
+            isSpeaking = true;
+            ttsStatus.innerHTML = '<div class="tts-spinner"></div> جاري توليد الصوت...';
+
+            const payload = {
+                contents: [{
+                    parts: [{ text: text }]
+                }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            // اختيار صوت عربي مناسب، يفضل Kore أو Zephyr إذا كان النص مختلطًا
+                            // سنستخدم Orus لأنه صوت عربي واضح وممتاز
+                            prebuiltVoiceConfig: { voiceName: "Orus" } 
+                        }
+                    }
+                },
+            };
+            
+            try {
+                const result = await fetchWithExponentialBackoff(GEMINI_TTS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const rateMatch = mimeType.match(/rate=(\d+)/);
+                    const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+                    
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    audioPlayer.src = audioUrl;
+                    audioPlayer.volume = parseFloat(volumeControl.value); // تطبيق مستوى الصوت
+                    audioPlayer.load();
+                    audioPlayer.play();
+                    
+                    // تحديث الحالة عند الانتهاء من النطق
+                    audioPlayer.onended = () => {
+                        isSpeaking = false;
+                        ttsStatus.textContent = 'الصوت جاهز.';
+                        URL.revokeObjectURL(audioUrl); // تحرير الذاكرة
+                    };
+                    audioPlayer.onerror = (e) => {
+                        console.error('Audio playback error:', e);
+                        isSpeaking = false;
+                        ttsStatus.textContent = 'خطأ في تشغيل الصوت.';
+                        URL.revokeObjectURL(audioUrl); 
+                    };
+                    
+                } else {
+                    throw new Error("فشل في استخراج بيانات الصوت من استجابة API.");
+                }
+
+            } catch (error) {
+                console.error("خطأ في توليد صوت Gemini TTS:", error);
+                isSpeaking = false;
+                ttsStatus.textContent = 'خطأ في توليد الصوت. ' + (error.message || 'مشكلة في الاتصال.');
+            }
+        }
+
+        // العناصر الرئيسية في الصفحة
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const videoContainer = document.getElementById('videoContainer');
+        const canvasContext = canvasElement.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const speakBtn = document.getElementById('speakBtn');
+        const statusDiv = document.getElementById('status');
+        const resultsDiv = document.getElementById('results');
+        const objectsCountSpan = document.getElementById('objectsCount');
+        const totalDetectionsSpan = document.getElementById('totalDetections');
+        const lastUpdateSpan = document.getElementById('lastUpdate');
+        const detectionRateSpan = document.getElementById('detectionRate');
+        const autoSpeakCheckbox = document.getElementById('autoSpeak');
+        const volumeControl = document.getElementById('volumeControl');
+        const detectionIntervalSelect = document.getElementById('detectionInterval');
+        const confidenceThresholdSelect = document.getElementById('confidenceThreshold');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const ttsStatus = document.getElementById('ttsStatus');
+        
+        // المتغيرات العامة
+        let model = null;
+        let isDetecting = false;
+        let detectionInterval = null;
+        let lastDetections = []; 
+        let stream = null;
+        let totalDetections = 0;
+        let detectionStartTime = null;
+        let detectionCount = 0;
+        
+        // متغيرات منع التكرار (Debouncing)
+        let lastSpokenObjects = ''; 
+        const CHATTER_THRESHOLD = 3; 
+        let sameObjectsCounter = 0;
+
+        
+        // ----------------------------------------------------------------------
+        // وظائف تهيئة وعرض الحالة
+        // ----------------------------------------------------------------------
+        
+        function updateStatusDisplay() {
+            // تحديث الحالة بناءً على جاهزية النموذج
+            if (model) {
+                statusDiv.textContent = 'النموذج جاهز - اضغط "بدء الكشف"';
+                statusDiv.className = 'status ready';
+                speakBtn.disabled = false;
+                ttsStatus.textContent = 'خدمة الصوت (Gemini TTS) جاهزة.';
+            } else {
+                statusDiv.textContent = 'جاري تحميل نموذج الذكاء الاصطناعي...';
+                statusDiv.className = 'status processing';
+                speakBtn.disabled = true;
+                ttsStatus.textContent = 'جاري انتظار تحميل النموذج...';
+            }
+        }
+
+        // دالة لضبط أبعاد الفيديو والحاوية
+        function setVideoAndCanvasDimensions() {
+            if (videoElement.videoWidth && videoElement.videoHeight) {
+                const aspectRatio = videoElement.videoHeight / videoElement.videoWidth;
+                
+                // تحديث أبعاد الـ Canvas
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                
+                // تحديث ارتفاع الحاوية للحفاظ على نسبة العرض إلى الارتفاع
+                const containerWidth = videoContainer.offsetWidth;
+                videoContainer.style.height = `${containerWidth * aspectRatio}px`;
+                videoContainer.style.paddingBottom = '0'; 
+            }
+        }
+
+        // دالة لتهيئة الكاميرا
+        async function initCamera() {
+            try {
+                statusDiv.textContent = 'جاري طلب إذن الكاميرا...';
+                statusDiv.className = 'status processing';
+                
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', // تفضيل الكاميرا الخلفية للجوال
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                
+                videoElement.srcObject = stream;
+                
+                await new Promise((resolve, reject) => {
+                    videoElement.onloadedmetadata = () => {
+                        setVideoAndCanvasDimensions();
+                        if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+                            reject(new Error("دفق الفيديو فشل في توفير الأبعاد الصحيحة (0x0)."));
+                            return;
+                        }
+                        videoElement.play().then(resolve).catch(e => {
+                            console.warn("فشل محاولة تشغيل الفيديو التلقائي:", e);
+                            resolve(); 
+                        });
+                    };
+                    setTimeout(() => {
+                         if (!videoElement.srcObject) { 
+                            reject(new Error("Video stream failed to load metadata in time."));
+                         } else if (videoElement.readyState < 2) {
+                             resolve();
+                         }
+                    }, 5000);
+                });
+                
+                window.addEventListener('resize', setVideoAndCanvasDimensions);
+                statusDiv.textContent = 'الكاميرا جاهزة للعمل.';
+                return true;
+            } catch (error) {
+                console.error('خطأ في الوصول إلى الكاميرا:', error);
+                let errorMessage = 'خطأ: فشل الوصول إلى الكاميرا. ';
+                if (error.name === 'NotAllowedError' || error.message.includes('permission')) {
+                    errorMessage += 'الرجاء التأكد من **منح الإذن** للوصول إلى الكاميرا وتحديث الصفحة.';
+                } else {
+                    errorMessage += `[${error.name || 'خطأ غير معروف'}]`;
+                }
+
+                statusDiv.textContent = errorMessage;
+                statusDiv.className = 'status error';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                return false;
+            }
+        }
+        
+        // دالة لتحميل نموذج الذكاء الاصطناعي
+        async function loadModel() {
+            try {
+                statusDiv.textContent = 'جاري تحميل نموذج الذكاء الاصطناعي...';
+                statusDiv.className = 'status processing';
+                
+                model = await cocoSsd.load();
+                
+                updateStatusDisplay(); 
+                
+                return true;
+            } catch (error) {
+                console.error('خطأ في تحميل النموذج:', error);
+                statusDiv.textContent = 'خطأ: فشل تحميل نموذج الذكاء الاصطناعي.';
+                statusDiv.className = 'status error';
+                startBtn.disabled = true;
+                return false;
+            }
+        }
+        
+        // دالة للكشف عن الأشياء
+        async function detectObjects() {
+            if (!model || !isDetecting) return;
+
+            if (videoElement.readyState < 2) { 
+                if (statusDiv.className !== 'status processing') {
+                    statusDiv.textContent = 'الكاميرا لم تحمل إطارًا بعد، جاري الانتظار...';
+                    statusDiv.className = 'status processing';
+                }
+                return;
+            }
+            
+            try {
+                const confidenceThreshold = parseFloat(confidenceThresholdSelect.value);
+                
+                if (!videoElement.srcObject || videoElement.paused || videoElement.ended) {
+                     stopDetection();
+                     return;
+                }
+                
+                const predictions = await model.detect(videoElement);
+                
+                const filteredPredictions = predictions.filter(p => p.score >= confidenceThreshold);
+                
+                // 1. ترجمة جميع الكائنات المكتشفة دفعة واحدة (مهم: يجب انتظار الترجمة)
+                const translatedPredictions = await Promise.all(filteredPredictions.map(async p => ({
+                    ...p,
+                    translatedClass: await translateObjectName(p.class)
+                })));
+
+                updateResults(translatedPredictions);
+                
+                lastUpdateSpan.textContent = new Date().toLocaleTimeString('ar-SA');
+                updateStatistics(translatedPredictions);
+
+                // العودة للحالة الجاهزة
+                if (statusDiv.className === 'status processing') { 
+                    statusDiv.textContent = 'الكشف مستمر.';
+                    statusDiv.className = 'status ready';
+                }
+                
+            } catch (error) {
+                console.error('خطأ في الكشف:', error);
+                statusDiv.textContent = 'حدث خطأ أثناء الكشف.';
+                statusDiv.className = 'status error';
+            }
+        }
+        
+        // دالة لتحديث النتائج على الشاشة (بما في ذلك التحدث)
+        function updateResults(predictions) {
+            resultsDiv.innerHTML = '';
+            objectsCountSpan.textContent = predictions.length;
+            
+            if (predictions.length === 0) {
+                resultsDiv.innerHTML = '<p class="empty-results">لم يتم اكتشاف أي أشياء في المشهد الحالي.</p>';
+                lastDetections = [];
+                drawDetections([]); // مسح الرسم
+                
+                if (lastSpokenObjects !== '') {
+                    sameObjectsCounter = 0; 
+                    lastSpokenObjects = ''; 
+                }
+                
+                return;
+            }
+            
+            lastDetections = predictions;
+
+            const uniqueObjects = [...new Set(lastDetections.map(p => p.translatedClass))];
+            
+            predictions.forEach(prediction => {
+                const resultItem = document.createElement('div');
+                resultItem.className = 'result-item';
+                
+                const confidencePercent = (prediction.score * 100).toFixed(1);
+                resultItem.innerHTML = `
+                    <strong>${prediction.translatedClass}</strong>
+                    <span class="confidence">${confidencePercent}%</span>
+                `;
+                
+                resultsDiv.appendChild(resultItem);
+            });
+            
+            // --- ميزة منع التكرار (Debouncing) ---
+            const currentObjectsString = uniqueObjects.sort().join(', '); 
+            
+            let shouldSpeak = false;
+
+            if (currentObjectsString !== lastSpokenObjects) {
+                sameObjectsCounter = 0;
+                shouldSpeak = true;
+            } else {
+                sameObjectsCounter++;
+                if (sameObjectsCounter >= CHATTER_THRESHOLD) {
+                    shouldSpeak = true;
+                    sameObjectsCounter = 0;
+                }
+            }
+            
+            // التحدث فقط إذا كان التحدث التلقائي مفعلاً ولم يكن هناك نطق حالي
+            if (shouldSpeak && autoSpeakCheckbox.checked && !isSpeaking) {
+                speakDetections(uniqueObjects);
+                lastSpokenObjects = currentObjectsString;
+            }
+
+            drawDetections(predictions);
+        }
+        
+        // دالة لرسم المربعات حول الأشياء المكتشفة 
+        function drawDetections(predictions) {
+            if (canvasElement.width === 0 || canvasElement.height === 0) {
+                 setVideoAndCanvasDimensions();
+            }
+
+            canvasContext.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            predictions.forEach(prediction => {
+                let [x, y, width, height] = prediction.bbox;
+                const translatedClass = prediction.translatedClass;
+
+                // --- رسم الإطار (البوكس) ---
+                canvasContext.strokeStyle = '#fdbb2d'; 
+                canvasContext.lineWidth = 4;
+                canvasContext.strokeRect(x, y, width, height);
+                
+                // --- رسم النص (يجب عكسه ليظهر مقروءًا) ---
+                canvasContext.save();
+                
+                // قلب المحور X وإزاحة نقطة الأصل إلى يمين الـ Canvas
+                canvasContext.translate(canvasElement.width, 0); 
+                canvasContext.scale(-1, 1);
+                
+                canvasContext.font = 'bold 20px Cairo, Arial';
+                const text = `${translatedClass} ${(prediction.score * 100).toFixed(0)}%`;
+                const textMetrics = canvasContext.measureText(text);
+                const textWidth = textMetrics.width;
+                
+                // حساب إحداثيات النص بعد العكس
+                const textX = canvasElement.width - x - width + 5; 
+                const textY = y + 25; 
+
+                // رسم خلفية النص (مستطيل)
+                canvasContext.fillStyle = '#fdbb2d'; 
+                const bgX = canvasElement.width - x - textWidth - 15; 
+                const finalBgX = Math.min(bgX, canvasElement.width - 5);
+                
+                canvasContext.fillRect(finalBgX, y - 28, textWidth + 10, 28);
+                
+                // رسم النص نفسه
+                canvasContext.fillStyle = '#0f1c4e'; 
+                canvasContext.fillText(text, finalBgX + 5, y - 8);
+                
+                canvasContext.restore();
+            });
+        }
+        
+        // دالة للتحدث بالكشف (تأخذ قائمة الكائنات الفريدة المترجمة)
+        function speakDetections(uniqueObjects) {
+            if (!uniqueObjects || uniqueObjects.length === 0) return;
+            
+            let textToSpeak;
+            if (uniqueObjects.length === 1) {
+                textToSpeak = `تم اكتشاف ${uniqueObjects[0]}`;
+            } else {
+                const allExceptLast = uniqueObjects.slice(0, -1).join('، ');
+                const lastObject = uniqueObjects[uniqueObjects.length - 1];
+                textToSpeak = `تم اكتشاف: ${allExceptLast} و ${lastObject}`;
+            } 
+            
+            speakText(textToSpeak);
+        }
+        
+        // دالة لتحديث الإحصائيات 
+        function updateStatistics(predictions) {
+            detectionCount += 1;
+            totalDetections += predictions.length;
+            totalDetectionsSpan.textContent = totalDetections;
+            
+            if (detectionStartTime) {
+                const elapsedTime = (Date.now() - detectionStartTime) / 1000;
+                const rate = elapsedTime > 0 ? (detectionCount / elapsedTime).toFixed(1) : '0.0';
+                detectionRateSpan.textContent = `${rate} مسحة/ثانية`;
+            }
+        }
+        
+        // دالة لبدء الكشف
+        async function startDetection() {
+            if (isDetecting) return;
+
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            speakBtn.disabled = true;
+            
+            if (!model) {
+                const modelLoaded = await loadModel();
+                if (!modelLoaded) {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    return;
+                }
+            }
+            
+            const cameraReady = await initCamera();
+            if (!cameraReady) {
+                 startBtn.disabled = false;
+                 return; 
+            }
+
+            isDetecting = true;
+            
+            // إعادة ضبط متغيرات منع التكرار
+            lastSpokenObjects = ''; 
+            sameObjectsCounter = 0;
+            
+            updateStatusDisplay(); // تحديث الحالة إلى "الكشف مستمر"
+
+            detectionStartTime = Date.now();
+            detectionCount = 0;
+            detectionRateSpan.textContent = '--';
+            
+            // بدء الكشف على فترات
+            const interval = parseInt(detectionIntervalSelect.value) * 1000;
+            detectionInterval = setInterval(detectObjects, interval);
+            
+            // الكشف الأولي فوراً
+            detectObjects();
+            
+            // إعلان بدء التشغيل
+            speakText('بدأ الكشف بنجاح، يرجى توجيه الكاميرا.');
+            speakBtn.disabled = false;
+        }
+        
+        // دالة لإيقاف الكشف 
+        function stopDetection() {
+            if (!isDetecting) return;
+            
+            isDetecting = false;
+            clearInterval(detectionInterval);
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            speakBtn.disabled = true;
+
+            updateStatusDisplay(); // تحديث الحالة إلى "تم الإيقاف"
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null; 
+                stream = null;
+            }
+            
+            // إيقاف أي تشغيل صوتي حالي
+            audioPlayer.pause();
+            audioPlayer.src = '';
+            
+            canvasContext.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            window.removeEventListener('resize', setVideoAndCanvasDimensions);
+
+            speakText('تم إيقاف نظام الكشف.');
+        }
+        
+        // تهيئة التطبيق عند تحميل الصفحة
+        window.addEventListener('load', async () => {
+            
+            await loadModel();
+            
+            // إضافة مستمعي الأحداث للأزرار
+            startBtn.addEventListener('click', startDetection);
+            stopBtn.addEventListener('click', stopDetection);
+            
+            speakBtn.addEventListener('click', () => {
+                if (lastDetections.length > 0) {
+                    // استخدام قائمة الكائنات الفريدة لـ تكرار الكشف
+                    const uniqueObjects = [...new Set(lastDetections.map(p => p.translatedClass))];
+                    const allExceptLast = uniqueObjects.slice(0, -1).join('، ');
+                    const lastObject = uniqueObjects[uniqueObjects.length - 1];
+                    const objectsText = uniqueObjects.length > 1 
+                        ? `${allExceptLast} و ${lastObject}`
+                        : uniqueObjects[0];
+
+                    speakText(`آخر الأشياء التي تم الإعلان عنها هي: ${objectsText}`);
+                } else {
+                    speakText('لم يتم اكتشاف أي أشياء في المشهد الحالي.');
+                }
+            });
+            
+            // تحديث مستوى الصوت عند تغيير الإعداد
+            volumeControl.addEventListener('change', () => {
+                audioPlayer.volume = parseFloat(volumeControl.value);
+            });
+            
+            // تحديث فترة الكشف عند تغيير الإعدادات
+            detectionIntervalSelect.addEventListener('change', () => {
+                const newValue = detectionIntervalSelect.value;
+                if (isDetecting) {
+                    clearInterval(detectionInterval);
+                    const interval = parseInt(newValue) * 1000;
+                    detectionInterval = setInterval(detectObjects, interval);
+                    speakText(`تم تغيير فترة الكشف إلى ${newValue} ثواني.`);
+                } else {
+                    speakText(`فترة الكشف هي ${newValue} ثواني.`);
+                }
+            });
+            
+            confidenceThresholdSelect.addEventListener('change', () => {
+                speakText(`تم تغيير حد الثقة إلى ${confidenceThresholdSelect.value * 100} بالمئة.`);
+            });
+        });
+    </script>
+</body>
+</html>
