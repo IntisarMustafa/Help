@@ -5408,6 +5408,9 @@ playerSurfaceY: hillHeight + 2.0,
         // ===== عناصر واجهة المستخدم =====
         const startScreen = document.getElementById("startScreen");
         const startGameBtn = document.getElementById("startGameBtn");
+        
+        // تحميل لوحة المتصدرين عند بدء التشغيل
+        window.addEventListener('DOMContentLoaded', loadLeaderboard);
         const infoPanel = document.getElementById("infoPanel");
         const scoreDisplay = document.getElementById("scoreDisplay");
         const coinsDisplay = document.getElementById("coinsDisplay");
@@ -5473,24 +5476,26 @@ playerSurfaceY: hillHeight + 2.0,
 
             // استخدام طريقة JSONP أو إرسال البيانات عبر URL لضمان وصولها لـ Google Apps Script
             // لأن POST مع no-cors قد يفشل أحياناً في تنفيذ الكود في الخلفية
+            // استخدام fetch مع mode: 'cors' إذا كان السكريبت يدعم ذلك، أو استخدام JSONP كبديل
             const scriptUrl = `${API_URL}?name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&score=${score}&callback=onScoreSaved`;
             
-            // إنشاء عنصر script لإرسال البيانات (طريقة JSONP)
-            const script = document.createElement('script');
-            script.src = scriptUrl;
-            
-            // تعريف دالة الاستجابة
+            // تعريف دالة الاستجابة قبل إنشاء السكريبت
             window.onScoreSaved = function(response) {
                 btn.textContent = "تم الحفظ ✅";
                 document.getElementById("scoreSubmissionArea").style.display = "none";
                 setTimeout(loadLeaderboard, 1000);
-                document.body.removeChild(script);
+                // تنظيف
+                const oldScript = document.getElementById('jsonp-script');
+                if (oldScript) oldScript.remove();
                 delete window.onScoreSaved;
             };
 
-            // في حال فشل JSONP (لأن السكريبت قد لا يدعم callback)، نستخدم الطريقة التقليدية كاحتياط
+            const script = document.createElement('script');
+            script.id = 'jsonp-script';
+            script.src = scriptUrl;
+            
             script.onerror = function() {
-                // محاولة أخيرة باستخدام fetch التقليدي
+                console.log("JSONP failed, trying fetch...");
                 fetch(API_URL, {
                     method: "POST",
                     mode: "no-cors",
@@ -5500,6 +5505,10 @@ playerSurfaceY: hillHeight + 2.0,
                     btn.textContent = "تم الحفظ ✅";
                     document.getElementById("scoreSubmissionArea").style.display = "none";
                     setTimeout(loadLeaderboard, 1000);
+                }).catch(err => {
+                    console.error("Save failed:", err);
+                    btn.disabled = false;
+                    btn.textContent = "فشل الحفظ، حاول مجدداً";
                 });
             };
 
@@ -9371,4 +9380,4 @@ function restartGame() {
 </script>
 
 </body>
-</html>
+    </html>
