@@ -9379,5 +9379,103 @@ function restartGame() {
 })();
 </script>
 
-</body>
-    </html>
+<script>
+(function() {
+    const API_URL = "https://script.google.com/macros/s/AKfycbztibzrh3GnP9gjabnfyvok8HX2IYiJigFUwcLpLKA8aQWnJqFxKFOSM9XRzf6T0V2OPg/exec";
+
+    window.loadLeaderboard = function() {
+        const list = document.getElementById("leaderboardList");
+        if (!list) return;
+        list.innerHTML = "<li style='text-align: center; opacity: 0.6;'>جاري التحميل...</li>";
+        
+        // محاولة التحميل مع معالجة الخطأ
+        fetch(API_URL)
+            .then(res => {
+                if (!res.ok) throw new Error("Server Error");
+                return res.json();
+            })
+            .then(data => {
+                list.innerHTML = "";
+                if (Array.isArray(data) && data.length > 0) {
+                    data.forEach((row, index) => {
+                        const li = document.createElement("li");
+                        li.className = "leaderboard-item";
+                        li.innerHTML = `<span>${index + 1}️⃣ ${row[0]} (${row[1]})</span> <span style="color: #ffd700; font-weight: bold;">${row[2]} نقطة</span>`;
+                        list.appendChild(li);
+                    });
+                } else {
+                    list.innerHTML = "<li style='text-align: center; opacity: 0.6;'>لا توجد نتائج مسجلة بعد</li>";
+                }
+            })
+            .catch(err => {
+                console.error("Leaderboard Error:", err);
+                list.innerHTML = "<li style='text-align: center; color: #ff4d4d; font-size: 12px;'>تنبيه: رابط السيرفر يعطي خطأ برمجياً. يرجى التأكد من إعدادات Google Apps Script.</li>";
+            });
+    };
+
+    window.submitScoreToLeaderboard = function() {
+        const nameInput = document.getElementById("playerName");
+        const schoolInput = document.getElementById("playerSchool");
+        const scoreElement = document.getElementById("finalScore");
+        const btn = document.getElementById("submitScoreBtn");
+
+        if (!nameInput || !schoolInput || !btn) return;
+
+        const name = nameInput.value.trim();
+        const school = schoolInput.value.trim();
+        const score = scoreElement ? scoreElement.innerText : "0";
+
+        if (!name || !school) {
+            alert("الرجاء إدخال الاسم والمدرسة");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = "جاري الحفظ...";
+
+        const callbackName = "cb_" + Date.now();
+        const url = `${API_URL}?name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&score=${score}&callback=${callbackName}`;
+        
+        window[callbackName] = function(response) {
+            btn.innerText = "تم الحفظ ✅";
+            btn.style.background = "#4caf50";
+            btn.style.color = "white";
+            setTimeout(() => {
+                const area = document.getElementById("scoreSubmissionArea");
+                if (area) area.style.display = "none";
+                if (window.loadLeaderboard) window.loadLeaderboard();
+            }, 1500);
+            const script = document.getElementById(callbackName);
+            if (script) script.remove();
+            delete window[callbackName];
+        };
+
+        const script = document.createElement('script');
+        script.id = callbackName;
+        script.src = url;
+        script.onerror = function() {
+            fetch(url, { mode: 'no-cors' }).then(() => {
+                btn.innerText = "تم الحفظ ✅";
+                btn.style.background = "#4caf50";
+                btn.style.color = "white";
+                setTimeout(() => {
+                    const area = document.getElementById("scoreSubmissionArea");
+                    if (area) area.style.display = "none";
+                    if (window.loadLeaderboard) window.loadLeaderboard();
+                }, 1500);
+            }).catch(() => {
+                btn.innerText = "خطأ في السيرفر ❌";
+                btn.disabled = false;
+            });
+            if (window[callbackName]) delete window[callbackName];
+        };
+        document.body.appendChild(script);
+    };
+
+    window.addEventListener('load', () => {
+        const btn = document.getElementById("submitScoreBtn");
+        if (btn) btn.onclick = window.submitScoreToLeaderboard;
+        window.loadLeaderboard();
+    });
+})();
+</script></body></html>
