@@ -5442,11 +5442,16 @@ playerSurfaceY: hillHeight + 2.0,
                     list.innerHTML = "";
                     if (data && data.length > 0) {
                         data.forEach((row, index) => {
+                            // التأكد من وجود البيانات وتجنب القيم الفارغة
+                            const name = row[0] || "لاعب مجهول";
+                            const school = row[1] || "مدرسة غير محددة";
+                            const score = row[2] || 0;
+                            
                             const li = document.createElement("li");
                             li.className = "leaderboard-item";
                             li.innerHTML = `
-                                <span>${index + 1}️⃣ ${row[0]} (${row[1]})</span>
-                                <span style="color: #ffd700; font-weight: bold;">${row[2]} نقطة</span>
+                                <span>${index + 1}️⃣ ${name} (${school})</span>
+                                <span style="color: #ffd700; font-weight: bold;">${score} نقطة</span>
                             `;
                             list.appendChild(li);
                         });
@@ -5474,45 +5479,57 @@ playerSurfaceY: hillHeight + 2.0,
             btn.disabled = true;
             btn.textContent = "جاري الحفظ...";
 
-            // استخدام طريقة JSONP أو إرسال البيانات عبر URL لضمان وصولها لـ Google Apps Script
-            // لأن POST مع no-cors قد يفشل أحياناً في تنفيذ الكود في الخلفية
-            // استخدام fetch مع mode: 'cors' إذا كان السكريبت يدعم ذلك، أو استخدام JSONP كبديل
-            const scriptUrl = `${API_URL}?name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&score=${score}&callback=onScoreSaved`;
-            
-            // تعريف دالة الاستجابة قبل إنشاء السكريبت
-            window.onScoreSaved = function(response) {
+            // السكريبت الخاص بك يتوقع بيانات بصيغة JSON عبر POST
+            const payload = {
+                name: name,
+                school: school,
+                score: score
+            };
+
+            fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors', // لتجاوز قيود CORS
+                headers: {
+                    'Content-Type': 'text/plain' // Google Apps Script يفضل text/plain عند استخدام no-cors
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(() => {
+                // في وضع no-cors، لا يمكننا قراءة الرد، لذا نفترض النجاح
                 btn.textContent = "تم الحفظ ✅";
-                document.getElementById("scoreSubmissionArea").style.display = "none";
-                setTimeout(loadLeaderboard, 1000);
-                // تنظيف
-                const oldScript = document.getElementById('jsonp-script');
-                if (oldScript) oldScript.remove();
-                delete window.onScoreSaved;
-            };
-
-            const script = document.createElement('script');
-            script.id = 'jsonp-script';
-            script.src = scriptUrl;
-            
-            script.onerror = function() {
-                console.log("JSONP failed, trying fetch...");
-                fetch(API_URL, {
-                    method: "POST",
-                    mode: "no-cors",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: `name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&score=${score}`
-                }).then(() => {
-                    btn.textContent = "تم الحفظ ✅";
+                
+                // إظهار رسالة نجاح
+                const successMsg = document.createElement("div");
+                successMsg.className = "success-message";
+                successMsg.style.position = "fixed";
+                successMsg.style.top = "50%";
+                successMsg.style.left = "50%";
+                successMsg.style.transform = "translate(-50%, -50%)";
+                successMsg.style.background = "rgba(0, 0, 0, 0.8)";
+                successMsg.style.color = "white";
+                successMsg.style.padding = "20px";
+                successMsg.style.borderRadius = "10px";
+                successMsg.style.zIndex = "1000";
+                successMsg.style.fontSize = "24px";
+                successMsg.textContent = "✅ تم حفظ النتيجة بنجاح!";
+                document.body.appendChild(successMsg);
+                
+                setTimeout(() => {
+                    successMsg.remove();
                     document.getElementById("scoreSubmissionArea").style.display = "none";
-                    setTimeout(loadLeaderboard, 1000);
-                }).catch(err => {
-                    console.error("Save failed:", err);
-                    btn.disabled = false;
-                    btn.textContent = "فشل الحفظ، حاول مجدداً";
-                });
-            };
-
-            document.body.appendChild(script);
+                }, 2000);
+                
+                // إعادة تحميل لوحة المتصدرين بعد ثانية
+                setTimeout(() => {
+                    if (window.loadLeaderboard) window.loadLeaderboard();
+                }, 1000);
+            })
+            .catch(err => {
+                console.error("Save failed:", err);
+                btn.disabled = false;
+                btn.textContent = "فشل الحفظ، حاول مجدداً";
+                alert("فشل حفظ النتيجة. تأكد من اتصال الإنترنت وحاول مرة أخرى.");
+            });
         };
         const finalScore = document.getElementById("finalScore");
         finalScore.textContent = "0";
@@ -9379,103 +9396,4 @@ function restartGame() {
 })();
 </script>
 
-<script>
-(function() {
-    const API_URL = "https://script.google.com/macros/s/AKfycbztibzrh3GnP9gjabnfyvok8HX2IYiJigFUwcLpLKA8aQWnJqFxKFOSM9XRzf6T0V2OPg/exec";
-
-    window.loadLeaderboard = function() {
-        const list = document.getElementById("leaderboardList");
-        if (!list) return;
-        list.innerHTML = "<li style='text-align: center; opacity: 0.6;'>جاري التحميل...</li>";
-        
-        // محاولة التحميل مع معالجة الخطأ
-        fetch(API_URL)
-            .then(res => {
-                if (!res.ok) throw new Error("Server Error");
-                return res.json();
-            })
-            .then(data => {
-                list.innerHTML = "";
-                if (Array.isArray(data) && data.length > 0) {
-                    data.forEach((row, index) => {
-                        const li = document.createElement("li");
-                        li.className = "leaderboard-item";
-                        li.innerHTML = `<span>${index + 1}️⃣ ${row[0]} (${row[1]})</span> <span style="color: #ffd700; font-weight: bold;">${row[2]} نقطة</span>`;
-                        list.appendChild(li);
-                    });
-                } else {
-                    list.innerHTML = "<li style='text-align: center; opacity: 0.6;'>لا توجد نتائج مسجلة بعد</li>";
-                }
-            })
-            .catch(err => {
-                console.error("Leaderboard Error:", err);
-                list.innerHTML = "<li style='text-align: center; color: #ff4d4d; font-size: 12px;'>تنبيه: رابط السيرفر يعطي خطأ برمجياً. يرجى التأكد من إعدادات Google Apps Script.</li>";
-            });
-    };
-
-    window.submitScoreToLeaderboard = function() {
-        const nameInput = document.getElementById("playerName");
-        const schoolInput = document.getElementById("playerSchool");
-        const scoreElement = document.getElementById("finalScore");
-        const btn = document.getElementById("submitScoreBtn");
-
-        if (!nameInput || !schoolInput || !btn) return;
-
-        const name = nameInput.value.trim();
-        const school = schoolInput.value.trim();
-        const score = scoreElement ? scoreElement.innerText : "0";
-
-        if (!name || !school) {
-            alert("الرجاء إدخال الاسم والمدرسة");
-            return;
-        }
-
-        btn.disabled = true;
-        btn.innerText = "جاري الحفظ...";
-
-        const callbackName = "cb_" + Date.now();
-        const url = `${API_URL}?name=${encodeURIComponent(name)}&school=${encodeURIComponent(school)}&score=${score}&callback=${callbackName}`;
-        
-        window[callbackName] = function(response) {
-            btn.innerText = "تم الحفظ ✅";
-            btn.style.background = "#4caf50";
-            btn.style.color = "white";
-            setTimeout(() => {
-                const area = document.getElementById("scoreSubmissionArea");
-                if (area) area.style.display = "none";
-                if (window.loadLeaderboard) window.loadLeaderboard();
-            }, 1500);
-            const script = document.getElementById(callbackName);
-            if (script) script.remove();
-            delete window[callbackName];
-        };
-
-        const script = document.createElement('script');
-        script.id = callbackName;
-        script.src = url;
-        script.onerror = function() {
-            fetch(url, { mode: 'no-cors' }).then(() => {
-                btn.innerText = "تم الحفظ ✅";
-                btn.style.background = "#4caf50";
-                btn.style.color = "white";
-                setTimeout(() => {
-                    const area = document.getElementById("scoreSubmissionArea");
-                    if (area) area.style.display = "none";
-                    if (window.loadLeaderboard) window.loadLeaderboard();
-                }, 1500);
-            }).catch(() => {
-                btn.innerText = "خطأ في السيرفر ❌";
-                btn.disabled = false;
-            });
-            if (window[callbackName]) delete window[callbackName];
-        };
-        document.body.appendChild(script);
-    };
-
-    window.addEventListener('load', () => {
-        const btn = document.getElementById("submitScoreBtn");
-        if (btn) btn.onclick = window.submitScoreToLeaderboard;
-        window.loadLeaderboard();
-    });
-})();
-</script></body></html>
+</body></html>
