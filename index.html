@@ -1429,7 +1429,7 @@
                     <div class="leaderboard-input-group">
                         <input type="text" id="playerName" class="leaderboard-input" placeholder="اسم الطالب">
                         <input type="text" id="playerSchool" class="leaderboard-input" placeholder="اسم المدرسة">
-                        <button type="button" onclick="submitScoreToLeaderboard()" id="submitScoreBtn" class="save-score-btn">حفظ النتيجة 🏆</button>
+                        <button type="button" id="submitScoreBtn" class="save-score-btn" style="position: relative; z-index: 999999; pointer-events: auto !important; cursor: pointer !important;">حفظ النتيجة 🏆</button>
                     </div>
                 </div>
 
@@ -5492,56 +5492,107 @@ playerSurfaceY: hillHeight + 2.0,
         }
 
         window.submitScoreToLeaderboard = function() {
-            const nameInput = document.getElementById("playerName");
-            const schoolInput = document.getElementById("playerSchool");
-            const scoreElement = document.getElementById("finalScore");
+            const name = document.getElementById("playerName").value.trim();
+            const school = document.getElementById("playerSchool").value.trim();
+            const score = parseInt(document.getElementById("finalScore").textContent) || 0;
             const btn = document.getElementById("submitScoreBtn");
-
-            const name = nameInput.value.trim();
-            const school = schoolInput.value.trim();
-            const score = parseInt(scoreElement.textContent) || 0;
 
             if (!name || !school) {
                 alert("الرجاء إدخال الاسم والمدرسة");
                 return;
             }
 
-            // منع النقر المتكرر
             btn.disabled = true;
-            btn.style.pointerEvents = "none";
-            btn.textContent = "جاري الحفظ...";
+            btn.textContent = "جاري الحفظ... ⏳";
+            btn.style.opacity = "0.7";
 
-            // تعبئة النموذج المخفي المدمج في HTML (حل GitHub المضمون)
-            document.getElementById("hiddenName").value = name;
-            document.getElementById("hiddenSchool").value = school;
-            document.getElementById("hiddenScore").value = score;
+            // البيانات بصيغة JSON
+            const payload = {
+                name: name,
+                school: school,
+                score: score
+            };
 
-            // إرسال النموذج فعلياً
-            document.getElementById("saveForm").submit();
-
-            // إظهار استجابة بصرية فورية للمستخدم
-            setTimeout(() => {
-                btn.textContent = "تم حفظ النتيجة ✅";
-                btn.style.background = "#2e7d32";
-                btn.style.color = "white";
-                
+            // استخدام fetch مع وضع no-cors وتنسيق text/plain
+            // هذا الحل هو الأفضل لتجاوز CORS مع Google Apps Script
+            fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                cache: 'no-cache',
+                headers: {
+                    'Content-Type': 'text/plain'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(() => {
+                // في وضع no-cors لا يمكننا قراءة الرد، لذا نفترض النجاح بعد ثانية
                 setTimeout(() => {
-                    if (document.getElementById("scoreSubmissionArea")) {
-                        document.getElementById("scoreSubmissionArea").style.display = "none";
-                    }
-                    loadLeaderboard();
+                    btn.textContent = "تم الحفظ بنجاح ✅";
+                    btn.style.background = "#2e7d32";
+                    btn.style.opacity = "1";
+                    
+                    // إظهار رسالة نجاح
+                    const successMsg = document.createElement("div");
+                    successMsg.style.position = "fixed";
+                    successMsg.style.top = "50%";
+                    successMsg.style.left = "50%";
+                    successMsg.style.transform = "translate(-50%, -50%)";
+                    successMsg.style.background = "rgba(0, 128, 0, 0.9)";
+                    successMsg.style.color = "white";
+                    successMsg.style.padding = "20px 40px";
+                    successMsg.style.borderRadius = "10px";
+                    successMsg.style.zIndex = "10000";
+                    successMsg.style.fontSize = "22px";
+                    successMsg.style.boxShadow = "0 0 20px rgba(0,0,0,0.5)";
+                    successMsg.innerHTML = "✅ تم تسجيل نتيجتك في لوحة المتصدرين!";
+                    document.body.appendChild(successMsg);
+                    
+                    setTimeout(() => {
+                        successMsg.remove();
+                        if (window.loadLeaderboard) window.loadLeaderboard();
+                    }, 3000);
                 }, 1000);
-            }, 500);
+            })
+            .catch(err => {
+                console.error("Save error:", err);
+                btn.disabled = false;
+                btn.textContent = "فشل الحفظ، حاول مجدداً";
+                btn.style.background = "#f44336";
+                btn.style.opacity = "1";
+            });
         };
-
-        // ربط الزر برمجياً لضمان العمل حتى لو فشل onclick في HTML
-        document.addEventListener('DOMContentLoaded', () => {
+        // ربط الزر برمجياً بطريقة قوية جداً لضمان العمل
+        function initializeSubmitButton() {
             const btn = document.getElementById("submitScoreBtn");
             if (btn) {
-                btn.addEventListener('click', window.submitScoreToLeaderboard);
-                console.log("Submit button event listener attached.");
+                // إزالة أي مستمعات قديمة لتجنب التكرار
+                btn.replaceWith(btn.cloneNode(true));
+                const newBtn = document.getElementById("submitScoreBtn");
+                newBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.submitScoreToLeaderboard();
+                });
+                console.log("Submit button initialized and ready.");
             }
-        });
+        }
+
+        // تشغيل التهيئة عند تحميل الصفحة وعند انتهاء اللعبة
+        document.addEventListener('DOMContentLoaded', initializeSubmitButton);
+        
+        // دالة إظهار لوحة النهاية
+        window.showGameOver = function() {
+            gameOver = true;
+            gameOverPanel.style.display = "block";
+            document.getElementById("finalScore").textContent = score;
+            document.getElementById("finalCoins").textContent = coinsCollected;
+            
+            // تهيئة الزر فور ظهور اللوحة
+            setTimeout(initializeSubmitButton, 100);
+            
+            // إيقاف اللعبة
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
+        };
         const finalScore = document.getElementById("finalScore");
         finalScore.textContent = "0";
         const finalCoins = document.getElementById("finalCoins");
